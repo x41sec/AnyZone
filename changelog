@@ -1,0 +1,10 @@
+2022-05-11 0.4 Fix bug with unknown qtype
+               Add webpage
+
+2022-05-10 0.3 Name finalized
+               Add support for www. and <own ip>. prefixes
+
+2022-04-30 0.2 Add rate limiting
+
+2022-04-29 0.1 PoC
+
