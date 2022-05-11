@@ -10,21 +10,24 @@ For more project information, see <http://anyz.one> or the `www.html` file.
 
 ## Code structure
 
-The main file is `anyzone.py`. For invocation and output (e.g. what is printed
-to stdout and stderr), see `anyzone.py --help`.
+The main file is `anyzone.py`. For invocation and 'log' output info, see
+`anyzone.py --help`.
 
 Configuration is done at the top of the main file.
 
 `ratelimit.py` is a standalone rate limiting library.
 
 The code listens for incoming UDP packets, attempts to parse them as DNS, and
-looks at the record being requested. To act authoritatively for the zone that
-we are assigned, it will respond appropriately with SOA, A, and NS records when
-asked for this zone. Any subdomains, aside from `www.` if `SUPPORT_WWW` is
-enabled, are parsed as an IP address. If the parsing fails, it returns a format
-error (FORMERR), and otherwise it will return an NS record for the same record,
-plus a glued-on A or AAAA record with the parsed IP value for IPv4 and IPv6
-respectively. Further subdomains are ignored. Any servers that ask about a
+looks at the record being requested.
+
+To act authoritatively for the zone that we are assigned, it will respond
+appropriately with SOA, A, and NS records when asked for this zone.
+
+Any subdomains, aside from `www.` if `SUPPORT_WWW` is enabled, are parsed as an
+IP address. If the parsing fails, it returns a format error (FORMERR), and
+otherwise it will return an NS record for the same record, plus a glued-on A or
+AAAA record with the parsed IP value for IPv4 and IPv6 respectively. Further
+subdomains are not considered while parsing. Any servers that ask about a
 subdomain are thus redirected to simply ask this server. Even asking for the A
 record is technically forwarded because the glue seems to be ignored by
 recursive resolvers queries (other than for handling the redirect itself).
