@@ -1,0 +1,6 @@
+[Service]
+ExecStart=python3 -u /opt/anyzone/anyzone.py anyz.one. 162.55.51.252
+
+[Install]
+WantedBy=default.target
+
