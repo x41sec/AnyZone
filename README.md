@@ -45,11 +45,12 @@ oversights turning into denial-of-service attacks (where the server crashes).
     - For a subdomain, you need two records:
         - `subdomain.example.org IN NS subdomain.example.org`
         - `subdomain.example.org IN A  <your server IP>` (and/or an AAAA record)
-2. Run `anyzone.py` as specified in `--help`. You can also create a systemd
+2. Install `dnslib`, e.g. using `apt install python3-dnslib`.
+3. Run `anyzone.py` as specified in `--help`. You can also create a systemd
    service using the `anyzone.service` file. In the latter case, you can view
    logs live (similar to `tail -f`) by using `journalctl -fu anyzone`
-3. Make sure 53/UDP is open in any firewalls you might have.
-4. Test with `dig 10.1.2.3.subdomain.example.org`, optionally adding
+4. Make sure 53/UDP is open in any firewalls you might have.
+5. Test with `dig 10.1.2.3.subdomain.example.org`, optionally adding
    `@127.0.0.1` if the delegation hasn't propagated yet. If it returns an NS
    record with glued-on A pointing to `10.1.2.3` then you win!
 
