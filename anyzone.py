@@ -37,11 +37,6 @@ VERSION_STRING = 'AnyZone DNS (http://anyz.one)'  # if you wish to identify the 
 SUPPORT_WWW = True  # respond to queries for "www." + $zonename with an A record containing $serverip
 SUPPORT_OWNIP = True  # respond to queries for $serverip.$zonename with an A record containing $serverip
 
-# TODO Wishlist:
-#  - dnssec support (sign answers)
-#  - cookie support and returning badcookie responses to rate-limited clients
-#  - TCP support
-
 
 def tryParseIP(string):
     try:
