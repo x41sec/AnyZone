@@ -147,7 +147,7 @@ while True:
         if not rl_global.status("it's me, mario!").ok:
             if RATE_LIMIT_INFORM_RATE != False and random.randrange(RATE_LIMIT_INFORM_RATE) == 1:
                 sys.stderr.write(f'Warn: global rate limit exceeded, informing {addr}\n')
-                sock.sendto('global rate limit exceeded', addr)
+                sock.sendto(b'global rate limit exceeded', addr)
             else:
                 sys.stderr.write(f'Warn: global rate limit exceeded, ignoring packet from {addr}\n')
             continue
@@ -162,14 +162,14 @@ while True:
             if status.reason == ratelimit.REASON_TABLEFULL:
                 if RATE_LIMIT_INFORM_RATE != False and random.randrange(RATE_LIMIT_INFORM_RATE) == 1:
                     sys.stderr.write(f'Error: per-client rate limit table full, cannot add client, informed {addr}\n')
-                    sock.sendto('global client limit exceeded', addr)
+                    sock.sendto(b'global client limit exceeded', addr)
                 else:
                     sys.stderr.write(f'Error: per-client rate limit table full, cannot add client {addr}\n')
                 continue
 
             if RATE_LIMIT_INFORM_RATE != False and random.randrange(RATE_LIMIT_INFORM_RATE) == 1:
                 sys.stdout.write(f'Info: client exceeded rate limit, informing {addr}\n')
-                sock.sendto('per-IP rate limit exceeded', addr)
+                sock.sendto(b'per-IP rate limit exceeded', addr)
             else:
                 sys.stdout.write(f'Info: client exceeded rate limit, ignoring packet from {addr}\n')
             continue
