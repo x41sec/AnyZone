@@ -36,6 +36,7 @@ SOA_TTL = TTL_DEFAULT  # number of seconds to cache negative responses for. We m
 VERSION_STRING = 'AnyZone DNS (http://anyz.one)'  # if you wish to identify the server software, set to False to disable
 SUPPORT_WWW = True  # respond to queries for "www." + $zonename with an A record containing $serverip
 SUPPORT_OWNIP = True  # respond to queries for $serverip.$zonename with an A record containing $serverip
+SUPPORT_WHATISMYIP = True  # respond with the remote address when asked for ip.$zonename or myip.$zonename or whatismyip.$zonename
 
 
 def tryParseIP(string):
@@ -89,10 +90,11 @@ serverip = sys.argv[2]
 
 # keeping it DRY, but root records are not simply static because the qname carries case randomization
 # it might be more efficient to define a static value and updating the qname property before returning it, but something something premature optimization
-root_RR_SOA  = lambda qname: dnslib.RR(qname, dnslib.QTYPE.SOA, ttl=TTL_DEFAULT, rdata=dnslib.SOA(zonename, SOA_EMAIL, (SOA_SERIAL, SOA_REFRESH, SOA_RETRY, SOA_EXPIRE, SOA_TTL)))
-root_RR_A    = lambda qname: dnslib.RR(qname, dnslib.QTYPE.A,   ttl=TTL_DEFAULT, rdata=dnslib.A(serverip))
-root_RR_NS   = lambda qname: dnslib.RR(qname, dnslib.QTYPE.NS,  ttl=TTL_DEFAULT, rdata=dnslib.NS(zonename))
 versiondbind = lambda qname: dnslib.RR(qname, dnslib.QTYPE.TXT, ttl=TTL_DEFAULT, rdata=dnslib.TXT(VERSION_STRING), rclass=dnslib.CLASS.CH)
+root_RR_SOA  = lambda qname: dnslib.RR(qname, dnslib.QTYPE.SOA, ttl=TTL_DEFAULT, rdata=dnslib.SOA(zonename, SOA_EMAIL, (SOA_SERIAL, SOA_REFRESH, SOA_RETRY, SOA_EXPIRE, SOA_TTL)))
+root_RR_NS   = lambda qname: dnslib.RR(qname, dnslib.QTYPE.NS,  ttl=TTL_DEFAULT, rdata=dnslib.NS(zonename))
+RR_A    = lambda qname, val: dnslib.RR(qname, dnslib.QTYPE.A,   ttl=TTL_DEFAULT, rdata=dnslib.A(val))
+RR_AAAA = lambda qname, val: dnslib.RR(qname, dnslib.QTYPE.AAAA,ttl=TTL_DEFAULT, rdata=dnslib.AAAA(val))
 
 rl_per_client = ratelimit.FARL(rate=RL_RATE, per=RL_PER, maxEntries=RL_MAX_ENTRIES, cleanupEvery=RL_CLEANUP_EVERY)
 rl_global = ratelimit.FARL(rate=MAX_TRAFFIC_RATE, per=MAX_TRAFFIC_PER, maxEntries=1, cleanupEvery=False)
@@ -180,6 +182,7 @@ while True:
 
         qname = str(q.questions[0].qname)
         qnamelower = qname.lower()
+        qtype = q.questions[0].qtype
 
         # all looks good, we're going to reply with 1 packet anyway so let's increment here
         packets_outgoing += 1
@@ -197,17 +200,28 @@ while True:
             sock.sendto(r.pack(), addr)
             continue
 
+        if SUPPORT_WHATISMYIP and qnamelower in ['whatismyip.' + zonename, 'myip.' + zonename, 'ip.' + zonename]:
+            remote_addr = ipaddress.IPv6Address(addr[0])
+            remotev6 = (remote_addr.ipv4_mapped is None)
+            if qtype in (dnslib.QTYPE.A, dnslib.QTYPE.ANY):
+                if not remotev6:  # if they're asking for A using v6 then we return without adding an answer here
+                    r.add_answer(RR_A(qname, str(remote_addr.ipv4_mapped)))
+            if qtype in (dnslib.QTYPE.AAAA, dnslib.QTYPE.ANY):
+                if remotev6:  # if they're asking for AAAA using v4 then we return without adding an answer here
+                    r.add_answer(RR_AAAA(qname, remote_addr.compressed))
+            sock.sendto(r.pack(), addr)
+            continue
+
         if qnamelower == zonename or (SUPPORT_WWW and qnamelower == 'www.' + zonename) or (SUPPORT_OWNIP and qnamelower == serverip + '.' + zonename):
             # technically 'www.' and '$serverip.' are not the same and shouldn't have a SOA record but... keep it simple, since it shouldn't matter
-            qtype = q.questions[0].qtype
             if qtype in (dnslib.QTYPE.A, dnslib.QTYPE.ANY):
                 sys.stdout.write(f'Debug: qtype A for "{qname}", returning {serverip} to {addr}\n')
-                r.add_answer(root_RR_A(qname))
+                r.add_answer(RR_A(qname, serverip))
                 # ANY should also include our NS and SOA but they already found us anyway so... let's limit amplification gains. Not sure we should respond to ANY anyway
             elif qtype == dnslib.QTYPE.NS:
                 sys.stdout.write(f'Debug: qtype NS for "{qname}", returning {zonename} answer with {serverip} glue to {addr}\n')
                 r.add_answer(root_RR_NS(qname))
-                r.add_ar(root_RR_A(qname))
+                r.add_ar(RR_A(qname, serverip))
             elif qtype == dnslib.QTYPE.SOA:
                 sys.stdout.write(f'Debug: qtype SOA for "{qname}", returning answer to {addr}\n')
                 # If we're returning SOAs for NODATAs anyway, then it's just as amplifiable to also add one in the form of an answer
