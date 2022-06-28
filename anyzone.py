@@ -209,6 +209,7 @@ while True:
             if qtype in (dnslib.QTYPE.AAAA, dnslib.QTYPE.ANY):
                 if remotev6:  # if they're asking for AAAA using v4 then we return without adding an answer here
                     r.add_answer(RR_AAAA(qname, remote_addr.compressed))
+            sys.stdout.write(f'Debug: answering "{qname}" for {addr}\n')
             sock.sendto(r.pack(), addr)
             continue
 
