@@ -252,8 +252,9 @@ while True:
             if parsedIP == False:
                 parsedIP = tryParseIP(prefix.split('.')[-1])
         if parsedIP == False:
-            sys.stdout.write(f"Info: couldn't find an ip in '{qname}' -> '{prefix}', returning FORMERR to {addr}\n")
-            r.header.rcode = dnslib.RCODE.FORMERR
+            sys.stdout.write(f"Info: couldn't find an ip in '{qname}' -> '{prefix}', returning NODATA to {addr}\n")
+            # Adding a SOA record turns this into a NODATA response and lets clients cache this response. IIUC.
+            r.add_auth(root_RR_SOA(qname))
             sock.sendto(r.pack(), addr)
             continue
 
