@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, time, random, socket, ipaddress
+import sys, time, random, socket, signal, ipaddress
 import dnslib  # apt install python3-dnslib, or the 'dnslib' folder within https://github.com/paulc/dnslib (ea9b2df at the time of writing)
 import ratelimit
 
@@ -46,6 +46,18 @@ def tryParseIP(string):
         return False
 
 
+def print_stats():
+    t = time.time() + 1e-7  # add epsilon to avoid divide by zero in case we print stats in the same millisecond as starting up
+    ipps = round(packets_incoming / (t - starttime))
+    opps = round(responses_dns / (t - starttime))
+    sys.stdout.write(f'Notice: {packets_incoming} ({ipps}/s) packets in. Out: {responses_dns} ({opps}/s) DNS responses, {responses_zd} delegations, {responses_ip} whatismyip, {responses_version} version\n')
+
+
+def exit_gracefully(signal_number, stack_frame):
+    print_stats()
+    sys.exit(0)
+
+
 if '--help' in sys.argv or '-h' in sys.argv or len(sys.argv) != 3:
     print(f'''
 AnyZone - DNS zones for everyone, custom made for any IP!
@@ -78,6 +90,7 @@ IP address, and domain is the recommended setup.
 Every line of output starts with a message level, loosely corresponding to the
 flowchart in version 1 of: https://stackoverflow.com/a/64806781/1201863
 Global issues: Warn/Error/Fatal (stderr)
+Stats, if enabled: Notice (stdout)
 One client having trouble: Info (stdout)
 Normal operation: Debug (stdout)
 On startup, if Python throws a backtrace (e.g. fails to bind to port), Python
@@ -105,8 +118,15 @@ sock = socket.socket(BINDPROTO, socket.SOCK_DGRAM)
 sock.bind((BINDIP, BINDPORT))
 
 starttime = time.time()
-packets_incoming = 0
-packets_outgoing = 0
+packets_incoming = 0  # number of packets we saw
+responses_dns = 0  # number of DNS responses we sent: `packets_incoming - you_are_rate_limited_responses - ignored_packets_due_to_rate_limiting` (the latter two are not separately counted)
+responses_zd = 0  # number of times we responded with a zone delegation, so someone did a normal query and we responded
+responses_ip = 0  # number of times we responded to a whatismyip query (or aliases thereof)
+responses_version = 0  # number of times we responded to a version.bind. query
+# Note that the responses_{zd,ip,version} counters do not add up to responses_dns because the latter also counts queries for our own zone (which is not a delegation, version request, or whatismyip request)
+
+signal.signal(signal.SIGINT, exit_gracefully)
+signal.signal(signal.SIGTERM, exit_gracefully)
 
 if zonename[0] == '.':
     sys.stderr.write('Fatal: zone name starts with a dot. This would result in impossible values\n')
@@ -119,17 +139,11 @@ if zonename[-1] != '.':
 sys.stdout.write('Debug: bound and ready to receive my first packet. Exciting!\n')
 
 while True:
-    try:
-        msg, addr = sock.recvfrom(MAXPACKETSIZE)
-        packets_incoming += 1
-    except KeyboardInterrupt:
-        sys.exit(0)
+    msg, addr = sock.recvfrom(MAXPACKETSIZE)
+    packets_incoming += 1
 
     if STATS_EVERY != False and random.randrange(STATS_EVERY) == 1:
-        t = time.time()
-        ipps = round(packets_incoming / (t - starttime))
-        opps = round(packets_outgoing / (t - starttime))
-        sys.stdout.write(f'Debug: packets incoming {packets_incoming} ({ipps}/s), outgoing {packets_outgoing} ({opps}/s)\n')
+        print_stats()
 
     try:
         try:
@@ -184,12 +198,13 @@ while True:
         qnamelower = qname.lower()
         qtype = q.questions[0].qtype
 
-        # all looks good, we're going to reply with 1 packet anyway so let's increment here
-        packets_outgoing += 1
+        # all looks good, we're going to reply with a packet anyway so let's increment here
+        responses_dns += 1
 
         if qnamelower == 'version.bind.' and VERSION_STRING:
             sys.stdout.write(f'Debug: "{qname}" and VERSION_STRING != False, returning "{VERSION_STRING}" to {addr}\n')
             r.add_answer(versiondbind(qname))
+            responses_version += 1
             sock.sendto(r.pack(), addr)
             continue
 
@@ -210,13 +225,14 @@ while True:
                 if remotev6:  # if they're asking for AAAA using v4 then we return without adding an answer here
                     r.add_answer(RR_AAAA(qname, remote_addr.compressed))
             sys.stdout.write(f'Debug: answering "{qname}" for {addr}\n')
+            responses_ip += 1
             sock.sendto(r.pack(), addr)
             continue
 
         if qnamelower == zonename or (SUPPORT_WWW and qnamelower == 'www.' + zonename) or (SUPPORT_OWNIP and qnamelower == serverip + '.' + zonename):
             # technically 'www.' and '$serverip.' are not the same and shouldn't have a SOA record but... keep it simple, since it shouldn't matter
             if qtype in (dnslib.QTYPE.A, dnslib.QTYPE.ANY):
-                sys.stdout.write(f'Debug: qtype A for "{qname}", returning {serverip} to {addr}\n')
+                sys.stdout.write(f'Debug: qtype A or ANY for "{qname}", returning {serverip} to {addr}\n')
                 r.add_answer(RR_A(qname, serverip))
                 # ANY should also include our NS and SOA but they already found us anyway so... let's limit amplification gains. Not sure we should respond to ANY anyway
             elif qtype == dnslib.QTYPE.NS:
@@ -270,6 +286,7 @@ while True:
         r.add_auth(dnslib.RR(qname, dnslib.QTYPE.NS, ttl=TTL_NS, rdata=dnslib.NS(NShostname)))
         r.add_ar(dnslib.RR(NShostname, ARType, ttl=TTL_NS, rdata=ARrdata))
 
+        responses_zd += 1
         sock.sendto(r.pack(), addr)
 
     except Exception as e:
